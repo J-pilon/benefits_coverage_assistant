@@ -1,0 +1,319 @@
+require 'rails_helper'
+
+RSpec.describe AiClients::OpenaiClient do
+  describe '.determine_intent' do
+    let(:system_prompt) { "You are a benefits assistant" }
+    let(:user_prompt) { "How much massage coverage do I have?" }
+
+    before do
+      stub_openai_client_creation(api_key: "test-api-key")
+    end
+
+    context 'with valid inputs' do
+      it 'returns structured JSON with function, params, and confidence' do
+        stub_openai_determine_intent(
+          function: "coverage_balances_read",
+          params: { "category" => "massage" },
+          confidence: 0.95
+        )
+
+        result = described_class.determine_intent(
+          system_prompt: system_prompt,
+          user_prompt: user_prompt
+        )
+
+        expect(result).to be_a(Hash)
+        expect(result[:function]).to eq("coverage_balances_read")
+        expect(result[:params]).to eq({ category: "massage" })
+        expect(result[:confidence]).to eq(0.95)
+      end
+
+      it 'calls OpenAI with correct parameters' do
+        client_instance = instance_double(OpenAI::Client)
+        allow(described_class).to receive(:openai_client).and_return(client_instance)
+
+        expect(client_instance).to receive(:chat).with(
+          parameters: {
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: system_prompt },
+              { role: "user", content: user_prompt }
+            ],
+            temperature: 0.3,
+            response_format: { type: "json_object" }
+          }
+        ).and_return({
+          "choices" => [
+            {
+              "message" => {
+                "content" => '{"function":"coverage_balances_read","params":{"category":"massage"},"confidence":0.9}'
+              }
+            }
+          ]
+        })
+
+        described_class.determine_intent(
+          system_prompt: system_prompt,
+          user_prompt: user_prompt
+        )
+      end
+
+      it 'sets response_format to json_object' do
+        client_instance = instance_double(OpenAI::Client)
+        allow(described_class).to receive(:openai_client).and_return(client_instance)
+
+        expect(client_instance).to receive(:chat).with(
+          hash_including(parameters: hash_including(response_format: { type: "json_object" }))
+        ).and_return({
+          "choices" => [
+            {
+              "message" => {
+                "content" => '{"function":"test","params":{},"confidence":0.9}'
+              }
+            }
+          ]
+        })
+
+        described_class.determine_intent(
+          system_prompt: system_prompt,
+          user_prompt: user_prompt
+        )
+      end
+    end
+
+    context 'with blank prompts' do
+      it 'returns nil when system prompt is blank' do
+        result = described_class.determine_intent(
+          system_prompt: "",
+          user_prompt: user_prompt
+        )
+
+        expect(result).to be_nil
+      end
+
+      it 'returns nil when user prompt is blank' do
+        result = described_class.determine_intent(
+          system_prompt: system_prompt,
+          user_prompt: ""
+        )
+
+        expect(result).to be_nil
+      end
+    end
+
+    context 'when API key is missing' do
+      before do
+        stub_openai_missing_api_key
+      end
+
+      it 'raises AiServiceError' do
+        expect {
+          described_class.determine_intent(
+            system_prompt: system_prompt,
+            user_prompt: user_prompt
+          )
+        }.to raise_error(BenefitsCoverageAssistant::AiServiceError, /OpenAI API key not configured/)
+      end
+    end
+
+    context 'when OpenAI API returns error' do
+      before do
+        stub_openai_client_creation(api_key: "test-api-key")
+        stub_openai_error(error_message: "API rate limit exceeded")
+      end
+
+      it 'raises the error from OpenAI' do
+        # The stub raises a StandardError which isn't caught by the OpenAI::Error rescue
+        expect {
+          described_class.determine_intent(
+            system_prompt: system_prompt,
+            user_prompt: user_prompt
+          )
+        }.to raise_error(StandardError, "API rate limit exceeded")
+      end
+    end
+
+    context 'when OpenAI returns malformed JSON' do
+      before do
+        stub_openai_client_creation(api_key: "test-api-key")
+        response = {
+          "choices" => [
+            {
+              "message" => {
+                "content" => "This is not valid JSON"
+              }
+            }
+          ]
+        }
+        allow_any_instance_of(OpenAI::Client).to receive(:chat).and_return(response)
+      end
+
+      it 'handles JSON parsing errors by returning nil' do
+        result = described_class.determine_intent(
+          system_prompt: system_prompt,
+          user_prompt: user_prompt
+        )
+
+        expect(result).to be_nil
+      end
+    end
+
+    context 'when OpenAI returns empty content' do
+      before do
+        stub_openai_client_creation(api_key: "test-api-key")
+        response = {
+          "choices" => [
+            {
+              "message" => {
+                "content" => nil
+              }
+            }
+          ]
+        }
+        allow_any_instance_of(OpenAI::Client).to receive(:chat).and_return(response)
+      end
+
+      it 'handles empty content by returning nil' do
+        result = described_class.determine_intent(
+          system_prompt: system_prompt,
+          user_prompt: user_prompt
+        )
+
+        expect(result).to be_nil
+      end
+    end
+  end
+
+  describe '.generate_response' do
+    let(:system_prompt) { "You are a helpful benefits assistant" }
+    let(:user_prompt) { "User Query: How much massage coverage?\n\nData: {...}" }
+
+    before do
+      stub_openai_client_creation(api_key: "test-api-key")
+    end
+
+    context 'with valid inputs' do
+      it 'returns natural language response text' do
+        response_text = "You have $500 remaining in your massage coverage."
+        stub_openai_generate_response(response_text: response_text, confidence: 0.9)
+
+        result = described_class.generate_response(
+          system_prompt: system_prompt,
+          user_prompt: user_prompt
+        )
+
+        expect(result).to be_a(Hash)
+        expect(result[:response]).to eq(response_text)
+        expect(result[:confidence]).to eq(0.9)
+      end
+
+      it 'calls OpenAI with correct parameters' do
+        client_instance = instance_double(OpenAI::Client)
+        allow(described_class).to receive(:openai_client).and_return(client_instance)
+
+        expect(client_instance).to receive(:chat).with(
+          parameters: {
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: system_prompt },
+              { role: "user", content: user_prompt }
+            ],
+            temperature: 0.7,
+            response_format: { type: "json_object" }
+          }
+        ).and_return({
+          "choices" => [
+            {
+              "message" => {
+                "content" => '{"response":"Response text","confidence":0.9}'
+              }
+            }
+          ]
+        })
+
+        described_class.generate_response(
+          system_prompt: system_prompt,
+          user_prompt: user_prompt
+        )
+      end
+    end
+
+    context 'with blank prompts' do
+      it 'returns nil when system prompt is blank' do
+        result = described_class.generate_response(
+          system_prompt: "",
+          user_prompt: user_prompt
+        )
+
+        expect(result).to be_nil
+      end
+
+      it 'returns nil when user prompt is blank' do
+        result = described_class.generate_response(
+          system_prompt: system_prompt,
+          user_prompt: ""
+        )
+
+        expect(result).to be_nil
+      end
+    end
+
+    context 'when API key is missing' do
+      before do
+        stub_openai_missing_api_key
+      end
+
+      it 'raises AiServiceError' do
+        expect {
+          described_class.generate_response(
+            system_prompt: system_prompt,
+            user_prompt: user_prompt
+          )
+        }.to raise_error(BenefitsCoverageAssistant::AiServiceError, /OpenAI API key not configured/)
+      end
+    end
+
+    context 'when OpenAI API returns error' do
+      before do
+        stub_openai_client_creation(api_key: "test-api-key")
+        stub_openai_error(error_message: "API timeout")
+      end
+
+      it 'raises error for unhandled exceptions' do
+        # The generate_response method doesn't have rescue blocks for general errors
+        # so unhandled exceptions will be raised
+        expect {
+          described_class.generate_response(
+            system_prompt: system_prompt,
+            user_prompt: user_prompt
+          )
+        }.to raise_error(StandardError, "API timeout")
+      end
+    end
+
+    context 'when OpenAI returns missing content' do
+      before do
+        stub_openai_client_creation(api_key: "test-api-key")
+        response = {
+          "choices" => [
+            {
+              "message" => {
+                "content" => nil
+              }
+            }
+          ]
+        }
+        allow_any_instance_of(OpenAI::Client).to receive(:chat).and_return(response)
+      end
+
+      it 'returns nil' do
+        result = described_class.generate_response(
+          system_prompt: system_prompt,
+          user_prompt: user_prompt
+        )
+
+        expect(result).to be_nil
+      end
+    end
+  end
+end
