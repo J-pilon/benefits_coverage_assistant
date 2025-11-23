@@ -7,8 +7,6 @@ class Profile < ApplicationRecord
     }
 
   has_many :coverage_balances, dependent: :destroy
-  has_many :chat_messages, dependent: :destroy
-  has_many :support_tickets, dependent: :destroy
 
   def benefit_for(category)
     Benefit.where(
