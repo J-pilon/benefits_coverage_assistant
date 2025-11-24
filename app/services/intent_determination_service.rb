@@ -1,21 +1,19 @@
 class IntentDeterminationService
-  attr_reader :ai_client, :redaction_service
+  attr_reader :ai_client, :redaction_service, :dispatcher_service
 
-  def initialize(ai_client: nil, redaction_service: nil)
+  def initialize(ai_client: nil, redaction_service: nil, dispatcher_service: nil)
     @ai_client = ai_client || AiClients::OpenaiClient
     @redaction_service = redaction_service || PiiRedaction
+    @dispatcher_service = dispatcher_service || FunctionDispatcher
   end
 
   def perform(user_query)
-    return error_result("User query cannot be blank") if user_query.blank?
+    return nil if user_query.blank?
 
-    sanitized_query = redact_sensitive_information(user_query)
+    redacted_query = redact_sensitive_information(user_query)
     system_prompt = build_system_prompt
 
-    ai_client.determine_intent(system_prompt: system_prompt, user_prompt: sanitized_query)
-  rescue StandardError => e
-    Rails.logger.error("Intent Determination error: #{e.message}")
-    error_result("Failed to determine intent: #{e.message}")
+    ai_client.determine_intent(system_prompt: system_prompt, user_prompt: redacted_query)
   end
 
   private
@@ -24,58 +22,67 @@ class IntentDeterminationService
     @redaction_service.redact(user_data)
   end
 
-  def function_definitions_file_path
-    file_path = Rails.root.join("config", "dispatch_functions.yml")
-
-    return nil unless File.exist?(file_path)
-
-    file_path
-  end
-
-  def function_definitions
-    yaml_content = YAML.load_file(function_definitions_file_path)
-
-    yaml_content["functions"] || []
-  end
-
   def sanitized_function_definitions
-    function_definitions.map do |func_def|
-      {
-        name: func_def["name"],
-        description: func_def["description"],
-        params_schema: func_def["parameters"]
-      }
+    @dispatcher_service.sanitized_function_definitions
+  end
+
+  def print_line(label, value = "", label_format_string: "%s")
+    formatted_label = if label.is_a?(Array)
+      format(label_format_string, *label)
+    else
+      format(label_format_string, label)
     end
+
+    "#{formatted_label}: #{value}"
+  end
+
+  def format_param_properties(label, param_keys = [], properties = {})
+    return [] if param_keys.blank? || label.nil?
+
+    parts = []
+
+    parts << print_line(label, label_format_string: "%17s")
+
+    param_keys.each do |key|
+      schema = properties[key]
+      next unless schema
+
+      parts << print_line([ "-", key ], label_format_string: "%3s %s")
+      parts << print_line("type", schema[:type], label_format_string: "%9s") if schema[:type]
+      parts << print_line("description", schema[:description], label_format_string: "%16s") if schema[:description]
+      parts << print_line("enum values", schema[:enum].map { |v| "\"#{v}\"" }.join(", "), label_format_string: "%16s") if schema[:enum]
+    end
+
+    parts
+  end
+
+  def format_params_schema(function_hash = {})
+    return "" if function_hash[:params_schema].nil?
+
+    properties = (function_hash.dig(:params_schema, :properties) || {})
+
+    required_params = (function_hash.dig(:params_schema, :required) || []).map(&:to_sym)
+    optional_params = properties.keys.map(&:to_sym) - required_params
+
+    parts = []
+
+    parts << format_param_properties("Required params", required_params, properties)
+    parts << format_param_properties("Optional params", optional_params, properties)
+
+    parts.flatten.join("\n")
   end
 
   def function_list
     parts = []
 
     sanitized_function_definitions.each do |f|
-      parts << "- Function name: #{f[:name]}"
-      parts << "Description: #{f[:description]}"
-      unless f[:params_schema]["required"].empty?
-        parts << "Required params: #{f[:params_schema]["required"].join(", ")}"
-        f[:params_schema]["properties"].each do |name, schema|
-          parts << "  - #{name}:"
-          parts << "    type: #{schema["type"]}" if schema["type"]
-          parts << "    description: #{schema["description"]}" if schema["description"]
-          parts << "    enum values: #{schema["enum"].map { |v| "\"#{v}\"" }.join(", ")}" if schema["enum"]
-        end
-      end
+      parts << print_line("Function name", f[:name], label_format_string: "- %s")
+      parts << print_line("Description",  f[:description], label_format_string: "%13s")
+      parts << format_params_schema(f)
       parts << "\n"
     end
 
     parts
-  end
-
-  def error_result(message)
-    {
-      function: "error",
-      params: {},
-      confidence: 0.0,
-      reason: message
-    }
   end
 
   def build_system_prompt

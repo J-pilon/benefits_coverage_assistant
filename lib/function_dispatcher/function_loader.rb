@@ -31,8 +31,8 @@ module FunctionDispatcher
       end
 
       def extract_optional_params(function_hash)
-        properties = function_hash.dig("parameters", "properties") || {}
-        required = extract_required_params(function_hash)
+        properties = function_hash.dig(:parameters, :properties) || {}
+        required = extract_required_params(function_hash).map(&:to_sym)
 
         properties.keys - required
       end

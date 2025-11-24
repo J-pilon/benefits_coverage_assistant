@@ -4,7 +4,7 @@ module FunctionDispatcher
                 :optional_params, :param_schema, :executor, :metadata
 
     def initialize(name:, method:, description:, executor:, metadata:, required_params: [], optional_params: [], param_schema: {})
-      @name = name
+      @name = name.to_sym
       @method = method
       @description = description
       @required_params = normalize_params(required_params)
@@ -27,12 +27,12 @@ module FunctionDispatcher
 
       errors << "Missing required parameters: #{missing.join(', ')}" if missing.any?
 
-      properties = @param_schema.dig("properties") || {}
+      properties = @param_schema.dig(:properties) || {}
       params.each do |key, value|
-        property = properties[key.to_s]
+        property = properties[key.to_sym]
         next unless property
 
-        enum_values = property["enum"]
+        enum_values = property[:enum]
         next unless enum_values
 
         unless enum_values.include?(value)
