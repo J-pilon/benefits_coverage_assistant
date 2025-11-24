@@ -11,27 +11,11 @@ RSpec.describe "Dashboards", type: :request do
   end
 
   describe "POST /dashboard/messages" do
-    let(:mock_ai_service) { instance_double(AiService) }
     let(:valid_message) { "How much do I have remaining for my vision benefits?" }
 
-    before do
-      allow(AiService).to receive(:new).and_return(mock_ai_service)
-    end
-
     context "with valid message and successful AI response" do
-      let(:ai_response) do
-        {
-          function: "coverage_balances_read",
-          params: { "category" => "vision" },
-          intent_confidence: 0.95,
-          function_result: { "remaining_amount" => 200.00 },
-          response: "You have $200 remaining in your vision coverage.",
-          response_confidence: 0.85
-        }
-      end
-
       before do
-        allow(mock_ai_service).to receive(:process_query).and_return(ai_response)
+        allow(FeatureFlags).to receive(:ai_chat_enabled?).and_return(true)
       end
 
       it "returns http success" do
@@ -39,26 +23,31 @@ RSpec.describe "Dashboards", type: :request do
         expect(response).to have_http_status(:success)
       end
 
-      it "calls AiService with the message and profile" do
-        post dashboard_messages_path, params: { message: valid_message }
-        expect(mock_ai_service).to have_received(:process_query).with(valid_message, profile: profile)
+      it "creates a chat message" do
+        expect {
+          post dashboard_messages_path, params: { message: valid_message }
+        }.to change(ChatMessage, :count).by(1)
       end
 
-      it "returns the AI response as JSON" do
+      it "returns the chat message with AI response" do
         post dashboard_messages_path, params: { message: valid_message }
         json_response = JSON.parse(response.body, symbolize_names: true)
 
-        expect(json_response[:response]).to eq("You have $200 remaining in your vision coverage.")
-        expect(json_response[:function]).to eq("coverage_balances_read")
-        expect(json_response[:intent_confidence]).to eq(0.95)
+        expect(json_response[:user_message]).to eq(valid_message)
+        expect(json_response[:ai_response]).to be_present
+        expect(json_response[:source]).to eq("ai")
+        expect(json_response[:id]).to be_present
+        expect(json_response[:created_at]).to be_present
+      end
+
+      it "does not create a support ticket" do
+        expect {
+          post dashboard_messages_path, params: { message: valid_message }
+        }.not_to change(SupportTicket, :count)
       end
     end
 
     context "with blank message" do
-      before do
-        allow(mock_ai_service).to receive(:process_query)
-      end
-
       it "returns unprocessable_entity status for empty string" do
         post dashboard_messages_path, params: { message: "" }
         expect(response).to have_http_status(:unprocessable_entity)
@@ -76,56 +65,68 @@ RSpec.describe "Dashboards", type: :request do
         expect(response).to have_http_status(:unprocessable_entity)
       end
 
-      it "does not call AiService when message is blank" do
-        post dashboard_messages_path, params: { message: "" }
-        expect(mock_ai_service).not_to have_received(:process_query)
+      it "does not create a chat message when blank" do
+        expect {
+          post dashboard_messages_path, params: { message: "" }
+        }.not_to change(ChatMessage, :count)
+      end
+    end
+
+    context "when AI chat is disabled" do
+      before do
+        allow(FeatureFlags).to receive(:ai_chat_enabled?).and_return(false)
+      end
+
+      it "returns http success" do
+        post dashboard_messages_path, params: { message: valid_message }
+        expect(response).to have_http_status(:success)
+      end
+
+      it "creates a support ticket" do
+        expect {
+          post dashboard_messages_path, params: { message: valid_message }
+        }.to change(SupportTicket, :count).by(1)
+      end
+
+      it "returns support ticket response" do
+        post dashboard_messages_path, params: { message: valid_message }
+        json_response = JSON.parse(response.body, symbolize_names: true)
+
+        expect(json_response[:user_message]).to eq(valid_message)
+        expect(json_response[:ai_response]).to include("support ticket")
+        expect(json_response[:source]).to eq("support_ticket")
+        expect(json_response[:support_ticket_id]).to be_present
+        expect(json_response[:support_ticket_status]).to eq("pending")
       end
     end
 
     context "when AiService returns nil" do
+      let(:mock_ai_service) { instance_double(AiService) }
+
       before do
+        allow(FeatureFlags).to receive(:ai_chat_enabled?).and_return(true)
+        allow(AiService).to receive(:new).and_return(mock_ai_service)
         allow(mock_ai_service).to receive(:process_query).and_return(nil)
       end
 
-      it "returns unprocessable_entity status" do
+      it "returns http success with support ticket fallback" do
         post dashboard_messages_path, params: { message: valid_message }
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:success)
       end
 
-      it "returns error message" do
-        post dashboard_messages_path, params: { message: valid_message }
-        json_response = JSON.parse(response.body, symbolize_names: true)
-
-        expect(json_response[:error]).to eq("Failed to process message")
-      end
-    end
-
-    context "when AiService returns response without response field" do
-      let(:incomplete_response) do
-        {
-          function: "coverage_balances_read",
-          params: { "category" => "vision" },
-          intent_confidence: 0.95,
-          function_result: nil,
-          response: nil,
-          response_confidence: 0.0
-        }
+      it "creates a support ticket as fallback" do
+        expect {
+          post dashboard_messages_path, params: { message: valid_message }
+        }.to change(SupportTicket, :count).by(1)
       end
 
-      before do
-        allow(mock_ai_service).to receive(:process_query).and_return(incomplete_response)
-      end
-
-      it "returns unprocessable_entity status" do
-        post dashboard_messages_path, params: { message: valid_message }
-        expect(response).to have_http_status(:unprocessable_entity)
-      end
-
-      it "returns error message" do
+      it "returns support ticket response" do
         post dashboard_messages_path, params: { message: valid_message }
         json_response = JSON.parse(response.body, symbolize_names: true)
 
-        expect(json_response[:error]).to eq("Failed to process message")
+        expect(json_response[:ai_response]).to include("support ticket")
+        expect(json_response[:source]).to eq("support_ticket")
+        expect(json_response[:support_ticket_id]).to be_present
       end
     end
   end

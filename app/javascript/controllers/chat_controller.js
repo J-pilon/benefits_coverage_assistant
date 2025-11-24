@@ -50,12 +50,13 @@ export default class extends Controller {
     try {
       const response = await this.sendMessageToServer(message)
       
+      // Remove loading indicator
       this.removeLoadingMessage(loadingId)
 
       if (response.error) {
         this.addMessage(response.error, "error")
       } else {
-        this.addMessage(response.response, "ai")
+        this.addMessage(response.ai_response, "ai", response.created_at)
       }
     } catch (error) {
       console.error("Error sending message:", error)
