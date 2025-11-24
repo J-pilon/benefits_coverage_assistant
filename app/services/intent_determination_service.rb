@@ -71,10 +71,10 @@ class IntentDeterminationService
 
   def error_result(message)
     {
-      "function" => "error",
-      "params" => {},
-      "confidence" => 0.0,
-      "error" => message
+      function: "error",
+      params: {},
+      confidence: 0.0,
+      reason: message
     }
   end
 
