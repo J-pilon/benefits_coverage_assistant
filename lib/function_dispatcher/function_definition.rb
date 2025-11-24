@@ -19,15 +19,13 @@ module FunctionDispatcher
     end
 
     def validate_params(params)
+      errors = []
+
       missing = @required_params.select { |param_name|
         !params.key?(param_name) && !params.key?(param_name.to_s)
       }
 
-      if missing.any?
-        raise BenefitsCoverageAssistant::FunctionValidationError.new(
-          "Missing required parameters: #{missing.join(', ')}"
-        )
-      end
+      errors << "Missing required parameters: #{missing.join(', ')}" if missing.any?
 
       properties = @param_schema.dig("properties") || {}
       params.each do |key, value|
@@ -37,12 +35,12 @@ module FunctionDispatcher
         enum_values = property["enum"]
         next unless enum_values
 
-        raise BenefitsCoverageAssistant::FunctionValidationError.new(
-          "Invalid value for #{key}: must be one of #{enum_values.join(', ')}"
-        ) unless enum_values.include?(value)
+        unless enum_values.include?(value)
+          errors << "Invalid value for #{key}: '#{value}' must be one of #{enum_values.join(', ')}"
+        end
       end
 
-      true
+      { valid: errors.empty?, errors: errors }
     end
 
     private

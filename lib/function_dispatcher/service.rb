@@ -19,7 +19,10 @@ module FunctionDispatcher
         raise BenefitsCoverageAssistant::FunctionDisabledError, "Function '#{function_name}' is disabled"
       end
 
-      function_def.validate_params(params)
+      validation = function_def.validate_params(params)
+      unless validation[:valid]
+        raise BenefitsCoverageAssistant::FunctionValidationError, validation[:errors].join("; ")
+      end
 
       if @config.context_required && context[:profile].nil?
         raise BenefitsCoverageAssistant::FunctionContextMissingError, "Profile context is required"
