@@ -267,6 +267,70 @@
       </div>
     </div>
 
+    <!-- Messages Container -->
+    <div 
+      data-chat-target="messages"
+      class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+      
+      <!-- Chat History Section (Hidden by default) -->
+      <div data-chat-target="history" class="hidden">
+        <!-- Load existing messages from database -->
+        <% if @chat_messages.any? %>
+          <div class="mb-4 text-center">
+            <span class="text-xs font-semibold text-gray-500 bg-white px-3 py-1 rounded-full shadow-sm">Chat History</span>
+          </div>
+          <% @chat_messages.each do |message| %>
+            <!-- User Message -->
+            <div class="mb-4">
+              <div class="flex justify-end">
+                <div class="bg-blue-500 text-white rounded-lg px-4 py-2 max-w-xs lg:max-w-md">
+                  <p class="text-sm"><%= message.user_message %></p>
+                  <p class="text-xs opacity-75 mt-1"><%= message.created_at.strftime("%l:%M %p") %></p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- AI Response -->
+            <% if message.ai_response.present? %>
+              <div class="mb-4">
+                <div class="flex justify-start">
+                  <div class="bg-green-500 text-white rounded-lg px-4 py-2 max-w-xs lg:max-w-md">
+                    <p class="text-sm"><%= message.ai_response %></p>
+                    <p class="text-xs opacity-75 mt-1"><%= message.created_at.strftime("%l:%M %p") %></p>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        <% else %>
+          <div class="text-center py-8">
+            <div class="inline-block bg-white rounded-lg p-6 shadow-sm">
+              <div class="bg-gray-100 rounded-full p-3 inline-block mb-3">
+                <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+              </div>
+              <h4 class="font-bold text-gray-900 mb-2">No History Yet</h4>
+              <p class="text-sm text-gray-600">Your chat history will appear here.</p>
+            </div>
+          </div>
+        <% end %>
+      </div>
+      
+      <!-- Welcome Message (Always visible) -->
+      <div class="text-center py-8">
+        <div class="inline-block bg-white rounded-lg p-6 shadow-sm">
+          <div class="bg-indigo-100 rounded-full p-3 inline-block mb-3">
+            <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+          </div>
+          <h4 class="font-bold text-gray-900 mb-2">Welcome!</h4>
+          <p class="text-sm text-gray-600">Ask me about your benefits, coverage, or balances.</p>
+        </div>
+      </div>
+    </div>
+
     <!-- Input Form -->
     <div class="border-t border-gray-200 p-4 bg-white">
       <form data-chat-target="form" data-action="submit->chat#submitMessage" class="flex space-x-2">
