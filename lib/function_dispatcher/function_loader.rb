@@ -8,26 +8,30 @@ module FunctionDispatcher
         yaml_content = YAML.load_file(file_path)
         functions_array = yaml_content["functions"] || []
 
-        functions_array.map { |func_hash| parse_function(func_hash) }
+        functions_array.map { |func_hash| parse_function(func_hash) }.compact
       end
 
       private
 
       def parse_function(function_hash)
+        return nil if function_hash.empty?
+
+        function_hash = function_hash.deep_symbolize_keys
+
         FunctionDefinition.new(
-          name: function_hash["name"].to_sym,
-          method: function_hash["method"].to_sym,
-          description: function_hash["description"],
-          executor: executor_for_method(function_hash["method"]),
-          metadata: function_hash["metadata"] || {},
+          name: function_hash[:name],
+          method: function_hash[:method],
+          description: function_hash[:description],
+          executor: executor_for_method(function_hash[:method]),
+          metadata: function_hash[:metadata] || {},
           required_params: extract_required_params(function_hash),
           optional_params: extract_optional_params(function_hash),
-          param_schema: function_hash["parameters"]
+          param_schema: function_hash[:parameters]
         )
       end
 
       def extract_required_params(function_hash)
-        function_hash.dig("parameters", "required") || []
+        function_hash.dig(:parameters, :required) || []
       end
 
       def extract_optional_params(function_hash)
@@ -44,6 +48,7 @@ module FunctionDispatcher
 
         full_class_name.constantize
       rescue NameError => e
+        Rails.logger.error("Failed to execute function class #{full_class_name}: #{e}")
         raise BenefitsCoverageAssistant::FunctionExecutorClassNotFound, "Executor class not found for method '#{method_name}': #{full_class_name}. " \
                              "Ensure the executor class is defined."
       end
