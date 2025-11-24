@@ -1,6 +1,7 @@
 class DashboardController < ApplicationController
   def index
     @profile = current_profile
+    @chat_messages = @profile.chat_messages.ordered
   end
 
   def create_message
@@ -13,13 +14,18 @@ class DashboardController < ApplicationController
       return
     end
 
-    ai_service = AiService.new
-    result = ai_service.process_query(user_message, profile: @profile)
+    support_service = SupportService.new(profile: @profile)
+    result = support_service.process_user_query(user_message)
 
-    if result && result[:response].present?
-      render json: result.compact
+    if result && result[:success].present?
+      render json: result[:chat_message].merge(
+        source: result[:source],
+        support_ticket_id: result.dig(:support_ticket, :id),
+        support_ticket_status: result.dig(:support_ticket, :status),
+        support_ticket_priority: result.dig(:support_ticket, :priority)
+      ).compact
     else
-      render json: { error: "Failed to process message" }, status: :unprocessable_entity
+      render json: { error: "Failed to process message" }, status: :internal_server_error
     end
   end
 end
