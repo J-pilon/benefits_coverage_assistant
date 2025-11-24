@@ -5,5 +5,5 @@ module BenefitsCoverageAssistant
   class FunctionNotFoundError < Error; end
   class FunctionDisabledError < Error; end
   class FunctionContextMissingError < Error; end
-  class FunctionExecuterClassNotFound < Error; end
+  class FunctionExecutorClassNotFound < Error; end
 end

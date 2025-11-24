@@ -43,16 +43,16 @@ RSpec.describe IntentDeterminationService do
         result = service.perform("")
 
         expect(result).to be_a(Hash)
-        expect(result["function"]).to eq("error")
-        expect(result["error"]).to include("User query cannot be blank")
+        expect(result[:function]).to eq("error")
+        expect(result[:reason]).to include("User query cannot be blank")
       end
 
       it 'returns error hash for nil' do
         result = service.perform(nil)
 
         expect(result).to be_a(Hash)
-        expect(result["function"]).to eq("error")
-        expect(result["error"]).to include("User query cannot be blank")
+        expect(result[:function]).to eq("error")
+        expect(result[:reason]).to include("User query cannot be blank")
       end
     end
 
@@ -85,9 +85,9 @@ RSpec.describe IntentDeterminationService do
         result = service.perform(user_query)
 
         expect(result).to be_a(Hash)
-        expect(result["function"]).to eq("error")
-        expect(result["error"]).to be_present
-        expect(result["error"]).to include("Failed to determine intent")
+        expect(result[:function]).to eq("error")
+        expect(result[:reason]).to be_present
+        expect(result[:reason]).to include("Failed to determine intent")
       end
 
       it 'logs errors when they occur' do
