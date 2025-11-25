@@ -39,20 +39,16 @@ RSpec.describe IntentDeterminationService do
     end
 
     context 'when query is blank' do
-      it 'returns error hash for empty string' do
+      it 'returns nil for empty string' do
         result = service.perform("")
 
-        expect(result).to be_a(Hash)
-        expect(result[:function]).to eq("error")
-        expect(result[:reason]).to include("User query cannot be blank")
+        expect(result).to be_nil
       end
 
-      it 'returns error hash for nil' do
+      it 'returns nil for nil' do
         result = service.perform(nil)
 
-        expect(result).to be_a(Hash)
-        expect(result[:function]).to eq("error")
-        expect(result[:reason]).to include("User query cannot be blank")
+        expect(result).to be_nil
       end
     end
 
@@ -78,26 +74,24 @@ RSpec.describe IntentDeterminationService do
     context 'with AI client errors' do
       let(:user_query) { "What is my vision coverage?" }
 
-      it 'handles AI client errors gracefully' do
-        stub_openai_client_creation(api_key: "test-api-key")
-        stub_openai_error(error_message: "API timeout")
-
-        result = service.perform(user_query)
-
-        expect(result).to be_a(Hash)
-        expect(result[:function]).to eq("error")
-        expect(result[:reason]).to be_present
-        expect(result[:reason]).to include("Failed to determine intent")
-      end
-
-      it 'logs errors when they occur' do
+      it 'raises AI service errors' do
         stub_openai_client_creation(api_key: "test-api-key")
         allow(AiClients::OpenaiClient).to receive(:determine_intent)
-          .and_raise(StandardError.new("Connection failed"))
+          .and_raise(BenefitsCoverageAssistant::AiServiceError.new("API timeout"))
 
-        expect(Rails.logger).to receive(:error).with(/Intent Determination error/)
+        expect {
+          service.perform(user_query)
+        }.to raise_error(BenefitsCoverageAssistant::AiServiceError, "API timeout")
+      end
 
-        service.perform(user_query)
+      it 'allows errors to propagate' do
+        stub_openai_client_creation(api_key: "test-api-key")
+        allow(AiClients::OpenaiClient).to receive(:determine_intent)
+          .and_raise(BenefitsCoverageAssistant::AiServiceError.new("Connection failed"))
+
+        expect {
+          service.perform(user_query)
+        }.to raise_error(BenefitsCoverageAssistant::AiServiceError, "Connection failed")
       end
     end
 

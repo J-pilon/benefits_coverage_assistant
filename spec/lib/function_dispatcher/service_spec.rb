@@ -268,15 +268,15 @@ RSpec.describe FunctionDispatcher::Service do
       balance_def = definitions.find { |d| d[:name] == :coverage_balances_read }
 
       expect(balance_def[:params_schema]).to be_present
-      expect(balance_def[:params_schema]["properties"]).to have_key("category")
+      expect(balance_def[:params_schema][:properties]).to have_key(:category)
     end
 
     it 'includes enum values in schema' do
       definitions = service.sanitized_function_definitions
       balance_def = definitions.find { |d| d[:name] == :coverage_balances_read }
 
-      category_schema = balance_def[:params_schema]["properties"]["category"]
-      expect(category_schema["enum"]).to include("massage", "vision", "dental")
+      category_schema = balance_def[:params_schema][:properties][:category]
+      expect(category_schema[:enum]).to include("massage", "vision", "dental")
     end
   end
 
